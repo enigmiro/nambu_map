@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>인천 에듀맵(Edu-Map)</title>
+<title>인천남부 에듀맵(Edu-Map)</title>
 
 <!-- ============================================================
   카카오맵 JavaScript API 로드
@@ -26,9 +26,9 @@
     --muted:#6b7280;
     --line:#e4e1d8;
 
-    --c-elem:#2563a6;         /* 초등학교 */
-    --c-middle:#a6672a;       /* 중학교 */
-    --c-high:#8b3a52;         /* 고등학교 */
+    --c-elem:#2563a6;
+    --c-middle:#a6672a;
+    --c-high:#8b3a52;
   }
 
   *{box-sizing:border-box;}
@@ -132,7 +132,6 @@
   }
   .filter-row .count{margin-left:auto;color:var(--muted);font-size:12px;}
 
-  /* 학교급별 교육지원청(남부·북부·동부·서부·강화) 세부 개수 */
   .level-block{margin-bottom:6px;}
   .office-breakdown{
     display:flex;
@@ -241,7 +240,7 @@
   <header>
     <div>
       <div class="eyebrow">INCHEON METROPOLITAN OFFICE OF EDUCATION</div>
-      <h1><a href="/" onclick="location.reload(); return false;" style="color:inherit;text-decoration:none;cursor:pointer;">인천 에듀맵(Edu-Map)</a> <span style="font-weight:400;font-size:12px;color:#9fb0c9;">인천광역시 전역 · 남부·북부·동부·서부·강화교육지원청</span></h1>
+      <h1><a href="/" onclick="location.reload(); return false;" style="color:inherit;text-decoration:none;cursor:pointer;">인천남부 에듀맵(Edu-Map)</a> <span style="font-weight:400;font-size:12px;color:#9fb0c9;">인천광역시 전역 · 남부·북부·동부·서부·강화교육지원청</span></h1>
     </div>
     <div class="stat" id="headerStat">데이터 불러오는 중…</div>
   </header>
@@ -326,7 +325,7 @@ function officeKeyOf(juOrgName){
   for(const key of OFFICE_ORDER){
     if(name.includes(OFFICE_META[key].match)) return key;
   }
-  return null;
+  return null; // 어느 교육지원청에도 매칭되지 않는 경우
 }
 
 // ------------------------------------------------------------
@@ -372,9 +371,6 @@ function loadKakaoMaps(){
   document.head.appendChild(script);
 }
 
-// 인천광역시 전역을 대상으로 하므로 첫 화면도 인천 전체가 보이도록 조정.
-// 강화군·옹진군의 도서 지역까지 한 화면에 담기는 어려워, 인천 본토(강화 포함)
-// 중심으로 넓게 설정했습니다. 도서 지역 학교는 목록 클릭으로 이동해 확인합니다.
 const INIT_CENTER = { lat: 37.5200, lng: 126.6900 };
 const INIT_LEVEL = 10;
 
@@ -414,7 +410,6 @@ async function fetchNeisSchools(){
     .filter(s => s.type);
 }
 
-// 개교예정(미개교) 학교 판별
 function isPlannedSchool(r){
   const name = r.SCHUL_NM || "";
   if(name.includes("가칭") || name.includes("개교예정")) return true;
@@ -643,10 +638,21 @@ function renderCounts(){
 
     const brkEl = document.getElementById("brk-" + type);
     if(brkEl){
-      brkEl.innerHTML = OFFICE_ORDER.map(key => {
-        const cnt = list.filter(s => s.office === key).length;
-        return `<span class="office-chip">${OFFICE_META[key].label} <b>${cnt}</b></span>`;
-      }).join("");
+      const matched = list.filter(s => s.office !== null);
+      // 관할청 정보가 전혀 없으면(=나이스 JU_ORG_NM 미제공) 0으로 도배된
+      // 배지 대신 사유를 안내. 콘솔에는 원본 juOrg 값을 출력해 진단을 돕습니다.
+      if(list.length > 0 && matched.length === 0){
+        brkEl.innerHTML = `<span class="office-chip">⚠ 관할청 정보 없음(나이스 미제공)</span>`;
+        console.warn(
+          `[${TYPE_META[type].label}] 관할기관명(JU_ORG_NM) 매칭 실패 — 원본 값 예시:`,
+          Array.from(new Set(list.slice(0, 10).map(s => s.juOrg)))
+        );
+      }else{
+        brkEl.innerHTML = OFFICE_ORDER.map(key => {
+          const cnt = list.filter(s => s.office === key).length;
+          return `<span class="office-chip">${OFFICE_META[key].label} <b>${cnt}</b></span>`;
+        }).join("");
+      }
     }
   });
 }

@@ -259,20 +259,23 @@
 ============================================================= */
 const NEIS_ATPT_CODE = "E10";           // 인천광역시교육청
 
-// [확장] 인천남부교육지원청 관할 구역 주소 키워드
+// 인천남부교육지원청 관할 구역 주소 키워드
 // 2026.7.1. 행정구역 개편으로 중구·동구 → 제물포구·영종구가 되었지만,
 // 나이스/유치원알리미의 주소 데이터가 아직 개편 이전(중구·동구)일 수 있어
 // 신·구 명칭을 모두 포함해 필터링합니다.
 const DISTRICT_KEYWORDS = ["미추홀구", "제물포구", "영종구", "옹진군", "중구", "동구"];
 
-// [수정] 관할 밖 구·군은 먼저 배제 — "남동구"가 "동구" 검사에 걸리는 오탐 방지
+// 관할 밖 구·군은 먼저 배제 — "남동구"가 "동구" 검사에 걸리는 오탐 방지
 const EXCLUDE_KEYWORDS = ["남동구", "연수구", "부평구", "계양구", "서구", "검단구", "강화군"];
 
-// 주소가 관할 구역에 해당하는지 검사 (신·구 명칭 모두 허용, 타 관할 배제 우선)
+// [강화] 주소가 관할 구역인지 정규식으로 엄격 검사:
+// 반드시 "인천광역시(또는 인천) + 관할 구·군명" 형태여야 통과.
+// 도로명·동 이름에 우연히 같은 글자가 들어가는 오탐을 원천 차단합니다.
+const DISTRICT_REGEX = /인천(광역시)?\s*(미추홀구|제물포구|영종구|옹진군|중구|동구)/;
 function matchesDistrict(addr){
   if(!addr) return false;
   if(EXCLUDE_KEYWORDS.some(k => addr.includes(k))) return false;
-  return DISTRICT_KEYWORDS.some(k => addr.includes(k));
+  return DISTRICT_REGEX.test(addr);
 }
 
 // ------------------------------------------------------------
@@ -286,10 +289,9 @@ const NEIS_KEY = "2652dd1c1da445c8aef448b305a1c88c";
 // ------------------------------------------------------------
 const CHILDSCHOOL_API_KEY = "f220902ef5c54014acc5b646b9951a8b";
 const INCHEON_SIDO_CODE = "28";
-// [확장] 인천남부교육지원청 관할 시군구 코드
+// 인천남부교육지원청 관할 시군구 코드
 // 제물포구·영종구는 2026.7. 신설이라 유치원알리미가 아직 구 코드(중구 28110,
-// 동구 28140)를 쓸 수 있어 구 코드로 조회합니다. 콘솔 로그에서 응답이 비면
-// 새 시군구 코드가 부여되었는지 확인 후 이 목록을 갱신하세요.
+// 동구 28140)를 쓸 수 있어 구 코드로 조회합니다.
 const NAMBU_GU_CODES = [
   { code: "28177", name: "미추홀구" },
   { code: "28110", name: "제물포구·영종구(구 중구)" },
@@ -317,7 +319,8 @@ let activeFilters = new Set(Object.keys(TYPE_META));
 let searchTerm = "";
 let neisLoadFailed = false;    // 나이스 호출 실패 여부
 let kinderLoadFailed = false;  // 유치원알리미 호출 실패 여부
-let kinderFailReason = "";     // [수정] 유치원알리미 실패 사유(화면 표시용)
+let kinderFailReason = "";     // 유치원알리미 실패 사유(화면 표시용)
+let hoverOverlay = null;       // [추가] 롤오버(마우스 오버) 정보창
 
 /* ============================================================
    2. 카카오맵 로드
@@ -329,8 +332,6 @@ function loadKakaoMaps(){
     return;
   }
   const script = document.createElement("script");
-  // libraries=services : 주소→좌표 변환(Geocoder)에 필요
-  // autoload=false : 스크립트 로드 후 kakao.maps.load()로 직접 초기화 시점을 제어
   script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_APP_KEY}&libraries=services&autoload=false`;
   script.onload = ()=> kakao.maps.load(initMap);
   script.onerror = ()=>{
@@ -362,7 +363,7 @@ async function fetchNeisSchools(){
   const rows = (data.schoolInfo && data.schoolInfo[1] && data.schoolInfo[1].row) || [];
 
   return rows
-    // [수정] 관할 판정 이중화: 주소가 관할 구역이거나,
+    // [강화] 관할 판정 이중화: 주소가 관할 구역(정규식 통과)이거나,
     // 나이스의 관할기관명(JU_ORG_NM)이 "남부교육지원청"인 학교만
     .filter(r =>
       matchesDistrict(r.ORG_RDNMA) ||
@@ -404,18 +405,15 @@ async function fetchKindergartens(){
       const res = await fetch(url);
       const data = await res.json();
 
-      // 최초 1회 아래 콘솔 로그로 실제 응답 구조를 확인하세요.
       console.log(`[${gu.name}] 유치원알리미 응답:`, data);
 
-      // [수정] API가 오류 상태를 알려주면(예: {"status":"DENIED","message":"유효하지 않은 키"})
-      // 그 사유를 저장해 화면 배너에 그대로 표시
+      // API가 오류 상태를 알려주면 그 사유를 저장해 화면 배너에 표시
       if(data.status && data.status !== "SUCCESS"){
         kinderFailReason = data.message || data.status;
         continue;
       }
 
-      // 유치원알리미는 kinderInfo에 유치원 객체 배열이 바로 담겨 오는
-      // 형태가 일반적이므로 배열이면 그대로 사용하고, 아니면 나이스식 구조를 시도
+      // kinderInfo가 유치원 객체 배열로 바로 오는 형태가 일반적
       const rows =
         (Array.isArray(data.kinderInfo) ? data.kinderInfo : null) ||
         (data.kinderInfo && data.kinderInfo[1] && data.kinderInfo[1].row) ||
@@ -423,7 +421,7 @@ async function fetchKindergartens(){
         [];
 
       rows.forEach(r=>{
-        // sggCode로 이미 걸러지지만, 혹시 모를 오차에 대비해 주소로 한 번 더 확인
+        // [강화] 관할 주소 정규식 검사
         if(!matchesDistrict(r.addr)) return;
 
         results.push({
@@ -433,7 +431,6 @@ async function fetchKindergartens(){
           address: r.addr || "",
           tel: r.telno || "",
           homepage: r.hpaddr || "",
-          // 유치원알리미는 위도/경도를 직접 제공하므로 별도 지오코딩 불필요
           lat: r.lttdcdnt ? parseFloat(r.lttdcdnt) : null,
           lng: r.lngtcdnt ? parseFloat(r.lngtcdnt) : null,
         });
@@ -444,8 +441,6 @@ async function fetchKindergartens(){
     }
   }
 
-  // [수정] 실패해도 가짜(표본) 데이터를 넣지 않음 — 유치원은 0으로 두고
-  // 실패 사유만 배너에 표시하는 편이 혼동이 없음
   if(!results.length){
     kinderLoadFailed = true;
     if(!kinderFailReason) kinderFailReason = "응답에 데이터 없음";
@@ -471,8 +466,8 @@ async function startDataLoad(){
     ]);
 
     allSchools = [...neisSchools, ...kinders].map(s => ({
-      lat: null, lng: null, marker: null,   // 기본값
-      ...s,                                  // lat/lng이 이미 있으면 이 값이 우선 적용
+      lat: null, lng: null, marker: null,
+      ...s,
     }));
 
     // [정렬] 유치원(공립)→유치원(사립)→초등학교→중학교→고등학교 순,
@@ -487,7 +482,6 @@ async function startDataLoad(){
     updateHeaderStat(`총 ${allSchools.length}개 기관 · 위치 변환 중…`);
     await geocodeAll(statusBar);
 
-    // 실패한 데이터 소스가 있으면 상태바를 숨기지 않고 경고 유지
     if(neisLoadFailed || kinderLoadFailed){
       const msgs = [];
       if(neisLoadFailed)   msgs.push("나이스(초·중·고) 호출 실패 — NEIS_KEY 확인");
@@ -523,7 +517,6 @@ function geocodeAll(statusBar){
       }
       const school = allSchools[i];
 
-      // 이미 위도/경도가 있는 경우 지오코딩 생략
       if(school.lat != null && school.lng != null){
         placeMarker(school);
         i++; next();
@@ -591,9 +584,54 @@ function placeMarker(school){
 
   kakao.maps.event.addListener(marker, "click", ()=> openInfo(marker, content));
 
+  // [추가] 롤오버 정보: 마커의 "오른쪽 옆"에 표시.
+  // 학교 부지는 마커를 중심으로 퍼져 있으므로, 정보창을 마커 위가 아니라
+  // 옆으로 띄우면(가로 오프셋) 학교 면적을 가리지 않습니다.
+  kakao.maps.event.addListener(marker, "mouseover", ()=> showHover(school));
+  kakao.maps.event.addListener(marker, "mouseout",  ()=> hideHover());
+
   school.marker = marker;
   school.infoContent = content;
   applyVisibility(school);
+}
+
+// [추가] 롤오버 정보창 표시/숨김 (CustomOverlay 재사용)
+function showHover(school){
+  const meta = TYPE_META[school.type];
+  const html = `
+    <div style="
+      margin-left:16px;                 /* 마커 오른쪽으로 띄우는 간격 */
+      background:#ffffff;
+      border:1px solid #cfd6dd;
+      border-left:4px solid ${meta.color};
+      border-radius:8px;
+      box-shadow:0 2px 8px rgba(0,0,0,.18);
+      padding:8px 12px;
+      font-family:inherit;
+      font-size:12px;
+      line-height:1.55;
+      white-space:nowrap;
+      pointer-events:none;              /* 정보창이 마우스 이벤트를 막지 않도록 */
+    ">
+      <div style="font-weight:700;font-size:13px;">${school.name}</div>
+      <div style="color:#555;">${meta.label}${school.found ? " · " + school.found : ""}</div>
+      <div style="color:#777;">${school.address}</div>
+    </div>`;
+  if(!hoverOverlay){
+    hoverOverlay = new kakao.maps.CustomOverlay({
+      zIndex: 20,
+      xAnchor: 0,     // 정보창의 왼쪽 끝을 마커 좌표에 맞춤 → 마커 오른쪽에 표시
+      yAnchor: 0.5,   // 세로는 마커 높이 중앙에 정렬
+      clickable: false,
+    });
+  }
+  hoverOverlay.setContent(html);
+  hoverOverlay.setPosition(new kakao.maps.LatLng(school.lat, school.lng));
+  hoverOverlay.setMap(map);
+}
+
+function hideHover(){
+  if(hoverOverlay) hoverOverlay.setMap(null);
 }
 
 function openInfo(marker, content){
@@ -644,8 +682,11 @@ function renderList(){
     `;
     item.addEventListener("click", ()=>{
       if(school.lat == null) return;
-      map.panTo(new kakao.maps.LatLng(school.lat, school.lng));
+      const pos = new kakao.maps.LatLng(school.lat, school.lng);
+      // [수정] 확대 후 setCenter로 학교를 화면 정중앙에 고정
+      // (panTo+setLevel 순서로는 확대 기준점이 어긋나 중앙을 벗어남)
       map.setLevel(3);
+      map.setCenter(pos);
       if(school.marker) openInfo(school.marker, school.infoContent);
     });
     wrap.appendChild(item);

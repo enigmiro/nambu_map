@@ -706,8 +706,10 @@ function renderCounts(){
         );
       }else{
         brkEl.innerHTML = OFFICE_ORDER.map(key => {
-          const cnt = list.filter(s => s.office === key).length;
-          return `<span class="office-chip">${OFFICE_META[key].label} <b>${cnt}</b></span>`;
+          const officeList = list.filter(s => s.office === key);
+          const cnt = officeList.length;
+          const branch = officeList.filter(s => (s.name || "").includes("분교")).length;
+          return `<span class="office-chip">${OFFICE_META[key].label} <b>${cnt}</b>(${branch})</span>`;
         }).join("");
       }
     }

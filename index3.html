@@ -333,14 +333,13 @@ const SIDO_LIST = [
   { code:"S10", name:"경남", lat:35.4606, lng:128.2132, level:11 },
   { code:"T10", name:"제주", lat:33.4996, lng:126.5312, level:10 },
 ];
-const DEFAULT_SIDO_CODE = "E10"; // 인천
+const DEFAULT_SIDO_CODE = "E10";
 
 // ------------------------------------------------------------
 // 나이스 교육정보 개방 포털 인증키 (무료 발급: https://open.neis.go.kr)
 // ------------------------------------------------------------
 const NEIS_KEY = "2652dd1c1da445c8aef448b305a1c88c";
 
-// 지도에 한 번에 표시할 최대 마커 수
 const MAX_MARKERS = 400;
 
 const TYPE_META = {
@@ -360,6 +359,7 @@ let allSchools = [];
 let activeFilters = new Set(Object.keys(TYPE_META));
 let searchTerm = "";
 let currentSido = null;
+let currentLoadId = 0;
 let neisLoadFailed = false;
 let hoverOverlay = null;
 let geoCache = {};
@@ -435,6 +435,8 @@ async function fetchOneSido(sido){
 async function loadSido(code){
   const sido = SIDO_LIST.find(s => s.code === code);
   if(!sido) return;
+
+  const loadId = ++currentLoadId;
   currentSido = sido;
 
   allSchools.forEach(s=>{ if(s.marker) s.marker.setMap(null); });
@@ -449,14 +451,21 @@ async function loadSido(code){
   statusBar.classList.remove("hidden");
   statusBar.textContent = `${sido.name} 학교 정보를 불러오는 중…`;
   neisLoadFailed = false;
+  renderCounts();
+  renderList();
 
   let rows = [];
+  let failed = false;
   try{
     rows = await fetchOneSido(sido);
   }catch(err){
     console.error(err);
-    neisLoadFailed = true;
+    failed = true;
   }
+
+  if(loadId !== currentLoadId) return;
+
+  neisLoadFailed = failed;
 
   allSchools = rows
     .filter(r => !isPlannedSchool(r))
@@ -709,16 +718,21 @@ function updateMapMarkers(){
   updateStatus(capped, matching.length, pending.length);
 
   if(pending.length){
-    processGeocodeQueue(pending, ()=> updateStatus(capped, matching.length, 0));
+    const snapshot = allSchools;
+    processGeocodeQueue(pending, snapshot, ()=> {
+      if(allSchools === snapshot) updateStatus(capped, matching.length, 0);
+    });
   }
 }
 
-function processGeocodeQueue(list, onDone){
+function processGeocodeQueue(list, snapshot, onDone){
   let i = 0;
   function next(){
+    if(allSchools !== snapshot) return;
     if(i >= list.length){ onDone(); return; }
     const s = list[i++];
     geocodeSchool(s, (ok)=>{
+      if(allSchools !== snapshot) return;
       if(ok) placeMarker(s);
       setTimeout(next, 80);
     });
@@ -791,7 +805,9 @@ function renderList(){
       <div class="meta">${school.address}</div>
     `;
     item.addEventListener("click", ()=>{
+      const clickSnapshot = allSchools;
       const focus = ()=>{
+        if(allSchools !== clickSnapshot) return;
         const pos = new kakao.maps.LatLng(school.lat, school.lng);
         map.setLevel(3);
         map.setCenter(pos);

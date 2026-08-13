@@ -335,7 +335,7 @@ async function fetchNeisSchools(){
       matchesDistrict(r.ORG_RDNMA) ||
       (r.JU_ORG_NM || "").includes("남부교육지원청")
     )
-    // [추가] 개교예정 학교 제외 (가칭/개교예정 표기 또는 설립일이 미래)
+    // 개교예정 학교 제외 (가칭/개교예정 표기 또는 설립일이 미래)
     .filter(r => !isPlannedSchool(r))
     .map(r => ({
       name: r.SCHUL_NM,
@@ -488,7 +488,7 @@ function placeMarker(school){
     image: makeMarkerImage(meta.color),
   });
 
-  // [수정] 정보창 구성:
+  // 정보창 구성:
   // - 주소는 white-space:nowrap으로 줄바꿈 없이 한 줄 표시 (박스가 주소 길이만큼 늘어남)
   // - 전화번호와 홈페이지 링크를 같은 줄에 배치, 전화번호 뒤 5칸 공백 후 홈페이지
   const homeLink = school.homepage
@@ -572,9 +572,12 @@ function applyVisibility(school){
 
 function renderCounts(){
   Object.keys(TYPE_META).forEach(type=>{
-    const n = allSchools.filter(s=>s.type===type).length;
+    const list = allSchools.filter(s => s.type === type);
+    const n = list.length;
+    // [추가] 학교명에 "분교"가 포함된 학교(분교장 포함)를 분교로 집계
+    const b = list.filter(s => (s.name || "").includes("분교")).length;
     const el = document.getElementById("cnt-" + type);
-    if(el) el.textContent = n;
+    if(el) el.textContent = `${n} (분교 ${b}포함)`;
   });
 }
 

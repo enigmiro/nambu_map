@@ -203,7 +203,7 @@
       </div>
 
       <div class="panel">
-        <div class="filter-title">학교급</div>
+        <div class="filter-title">학교급 / 설립유형</div>
 
         <label class="filter-row">
           <input type="checkbox" data-type="elem" checked>
@@ -298,6 +298,7 @@ function loadKakaoMaps(){
   }
   const script = document.createElement("script");
   // libraries=services : 주소→좌표 변환(Geocoder)에 필요
+  // autoload=false : 스크립트 로드 후 kakao.maps.load()로 직접 초기화 시점을 제어
   script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_APP_KEY}&libraries=services&autoload=false`;
   script.onload = ()=> kakao.maps.load(initMap);
   script.onerror = ()=>{
@@ -307,10 +308,14 @@ function loadKakaoMaps(){
   document.head.appendChild(script);
 }
 
+// 지도 초기 화면(첫 로드 시 중심·확대 레벨) — 검색어를 지우면 이 값으로 복귀
+const INIT_CENTER = { lat: 37.4550, lng: 126.5600 }; // 미추홀~영종을 함께 조망
+const INIT_LEVEL = 9;
+
 function initMap(){
   map = new kakao.maps.Map(document.getElementById("map"), {
-    center: new kakao.maps.LatLng(37.4550, 126.5600), // 미추홀~영종을 함께 조망
-    level: 9,
+    center: new kakao.maps.LatLng(INIT_CENTER.lat, INIT_CENTER.lng),
+    level: INIT_LEVEL,
   });
   map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
   geocoder = new kakao.maps.services.Geocoder();
@@ -397,7 +402,7 @@ async function startDataLoad(){
       return a.name.localeCompare(b.name, "ko");
     });
 
-    updateHeaderStat(`총 ${allSchools.length}개교 · 위치 변환 중…`);
+    updateHeaderStat(`총 ${allSchools.length}개 기관 · 위치 변환 중…`);
     await geocodeAll(statusBar);
 
     if(neisLoadFailed){
@@ -405,7 +410,7 @@ async function startDataLoad(){
     }else{
       statusBar.classList.add("hidden");
     }
-    updateHeaderStat(`총 ${allSchools.length}개교 표시 중`);
+    updateHeaderStat(`총 ${allSchools.length}개 기관 표시 중`);
     renderCounts();
     renderList();
   }catch(err){
@@ -574,7 +579,7 @@ function renderCounts(){
   Object.keys(TYPE_META).forEach(type=>{
     const list = allSchools.filter(s => s.type === type);
     const n = list.length;
-    // [추가] 학교명에 "분교"가 포함된 학교(분교장 포함)를 분교로 집계
+    // 학교명에 "분교"가 포함된 학교(분교장 포함)를 분교로 집계
     const b = list.filter(s => (s.name || "").includes("분교")).length;
     const el = document.getElementById("cnt-" + type);
     if(el) el.textContent = `${n} (분교 ${b}포함)`;
@@ -584,8 +589,7 @@ function renderCounts(){
 function renderList(){
   const wrap = document.getElementById("listWrap");
   wrap.innerHTML = "";
-  // allSchools가 이미 [학교급 → 가나다] 순으로 정렬되어 있음
-  const visible = allSchools.filter(s =>
+  let visible = allSchools.filter(s =>
     activeFilters.has(s.type) && (!searchTerm || s.name.includes(searchTerm))
   );
 
@@ -631,7 +635,21 @@ document.getElementById("searchInput").addEventListener("input", (e)=>{
   searchTerm = e.target.value.trim();
   allSchools.forEach(applyVisibility);
   renderList();
+
+  // 검색란이 비면(글자를 모두 지우면) 지도를 첫 화면 상태로 복귀
+  if(searchTerm === ""){
+    resetToInitialView();
+  }
 });
+
+// 지도를 초기 중심·확대 레벨로 되돌리고, 열려 있는 정보창을 닫음
+function resetToInitialView(){
+  if(!map) return;
+  map.setLevel(INIT_LEVEL);
+  map.setCenter(new kakao.maps.LatLng(INIT_CENTER.lat, INIT_CENTER.lng));
+  if(activeInfoWindow) activeInfoWindow.close();
+  hideHover();
+}
 
 loadKakaoMaps();
 </script>

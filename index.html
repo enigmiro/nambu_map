@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>인천남부교육지원청 관내 학교 지도</title>
+
+<!-- ============================================================
+  카카오맵 JavaScript API 로드
+  ⚠️ 아래 YOUR_KAKAO_APP_KEY 를 발급받은 JavaScript 키로 교체하세요.
+  발급: https://developers.kakao.com/console/app
+  1) 애플리케이션 추가 → JavaScript 키 확인
+  2) [플랫폼] 설정에서 Web 플랫폼에 이 사이트가 열릴 도메인 등록
+     (로컬 테스트 시 http://localhost 또는 file 경로 안내에 따라 등록)
+  3) [카카오맵] 활성화 (제품 설정 > 카카오맵)
+============================================================= -->
+<script>
+  const KAKAO_APP_KEY = "d2f0dd3662dd6d07e7679fe89a147175";
+</script>
+
+<style>
+  :root{
+    --navy:#12233f;
+    --navy-2:#1c3560;
+    --paper:#f6f4ee;
+    --paper-2:#ffffff;
+    --ink:#1c2430;
+    --muted:#6b7280;
+    --line:#e4e1d8;
+
+    --c-kinder-pub:#2e7d63;   /* 유치원(공립) */
+    --c-kinder-priv:#5aa88a;  /* 유치원(사립) */
+    --c-elem:#2563a6;         /* 초등학교 */
+    --c-middle:#a6672a;       /* 중학교 */
+    --c-high:#8b3a52;         /* 고등학교 */
+  }
+
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{
+    font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+    background:var(--paper);
+    color:var(--ink);
+  }
+
+  .app{
+    display:grid;
+    grid-template-rows:auto 1fr;
+    height:100vh;
+  }
+
+  header{
+    background:var(--navy);
+    color:#fff;
+    padding:14px 22px;
+    display:flex;
+    align-items:baseline;
+    gap:14px;
+    border-bottom:3px solid var(--c-elem);
+  }
+  header .eyebrow{
+    font-size:11px;
+    letter-spacing:.14em;
+    color:#9fb0c9;
+    font-weight:600;
+  }
+  header h1{
+    font-size:18px;
+    margin:0;
+    font-weight:700;
+    letter-spacing:-0.01em;
+  }
+  header .stat{
+    margin-left:auto;
+    font-size:12px;
+    color:#c7d2e3;
+  }
+  header .stat b{color:#fff;}
+
+  .layout{
+    display:grid;
+    grid-template-columns:340px 1fr;
+    min-height:0;
+  }
+
+  aside{
+    background:var(--paper-2);
+    border-right:1px solid var(--line);
+    display:flex;
+    flex-direction:column;
+    min-height:0;
+  }
+
+  .panel{
+    padding:16px 18px;
+    border-bottom:1px solid var(--line);
+  }
+
+  .search-box{
+    display:flex;
+    gap:6px;
+  }
+  .search-box input{
+    flex:1;
+    padding:9px 11px;
+    border:1px solid var(--line);
+    border-radius:8px;
+    font-size:13px;
+    background:var(--paper);
+  }
+  .search-box input:focus{outline:2px solid var(--c-elem);outline-offset:1px;}
+
+  .filter-title{
+    font-size:11px;
+    letter-spacing:.08em;
+    color:var(--muted);
+    font-weight:700;
+    margin-bottom:10px;
+    text-transform:uppercase;
+  }
+
+  .filter-row{
+    display:flex;
+    align-items:center;
+    gap:9px;
+    padding:6px 0;
+    font-size:13.5px;
+    cursor:pointer;
+    user-select:none;
+  }
+  .filter-row input{accent-color:var(--navy-2);width:15px;height:15px;cursor:pointer;}
+  .swatch{
+    width:11px;height:11px;border-radius:50%;flex:none;
+  }
+  .filter-row .count{margin-left:auto;color:var(--muted);font-size:12px;}
+
+  .list-wrap{
+    flex:1;
+    overflow-y:auto;
+    min-height:0;
+  }
+  .list-item{
+    padding:11px 18px;
+    border-bottom:1px solid var(--line);
+    cursor:pointer;
+  }
+  .list-item:hover{background:var(--paper);}
+  .list-item .name{font-size:13.5px;font-weight:600;}
+  .list-item .meta{font-size:11.5px;color:var(--muted);margin-top:2px;}
+  .tag{
+    display:inline-block;
+    font-size:10.5px;
+    padding:1px 6px;
+    border-radius:20px;
+    color:#fff;
+    margin-right:5px;
+    font-weight:600;
+  }
+
+  #map{width:100%;height:100%;}
+
+  .status-bar{
+    position:absolute;
+    left:356px;
+    bottom:16px;
+    background:rgba(18,35,63,0.92);
+    color:#fff;
+    padding:8px 14px;
+    border-radius:8px;
+    font-size:12.5px;
+    z-index:5;
+    max-width:420px;
+  }
+  .status-bar.hidden{display:none;}
+
+  .map-col{position:relative;}
+
+  .legend-note{
+    padding:12px 18px 16px;
+    font-size:11.5px;
+    color:var(--muted);
+    line-height:1.5;
+  }
+  .legend-note a{color:var(--c-elem);}
+
+  ::-webkit-scrollbar{width:8px;}
+  ::-webkit-scrollbar-thumb{background:#d8d4c8;border-radius:8px;}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header>
+    <div>
+      <div class="eyebrow">MICHUHOL-GU, INCHEON</div>
+      <h1>인천 미추홀구 관내 학교 지도</h1>
+    </div>
+    <div class="stat" id="headerStat">데이터 불러오는 중…</div>
+  </header>
+
+  <div class="layout">
+    <aside>
+      <div class="panel">
+        <div class="search-box">
+          <input id="searchInput" type="text" placeholder="학교명으로 검색">
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="filter-title">학교급 / 설립유형</div>
+
+        <label class="filter-row">
+          <input type="checkbox" data-type="kinder-pub" checked>
+          <span class="swatch" style="background:var(--c-kinder-pub)"></span>
+          유치원 (공립)
+          <span class="count" id="cnt-kinder-pub">0</span>
+        </label>
+        <label class="filter-row">
+          <input type="checkbox" data-type="kinder-priv" checked>
+          <span class="swatch" style="background:var(--c-kinder-priv)"></span>
+          유치원 (사립)
+          <span class="count" id="cnt-kinder-priv">0</span>
+        </label>
+        <label class="filter-row">
+          <input type="checkbox" data-type="elem" checked>
+          <span class="swatch" style="background:var(--c-elem)"></span>
+          초등학교
+          <span class="count" id="cnt-elem">0</span>
+        </label>
+        <label class="filter-row">
+          <input type="checkbox" data-type="middle" checked>
+          <span class="swatch" style="background:var(--c-middle)"></span>
+          중학교
+          <span class="count" id="cnt-middle">0</span>
+        </label>
+        <label class="filter-row">
+          <input type="checkbox" data-type="high" checked>
+          <span class="swatch" style="background:var(--c-high)"></span>
+          고등학교
+          <span class="count" id="cnt-high">0</span>
+        </label>
+      </div>
+
+      <div class="list-wrap" id="listWrap"></div>
+
+      <div class="legend-note">
+        초·중·고 데이터: 나이스 교육정보 개방 포털(open.neis.go.kr) 실시간 연동 (미추홀구 주소 기준 필터).
+        유치원 데이터: <a href="https://e-childschoolinfo.moe.go.kr/openApi/login.do" target="_blank">유치원알리미 Open API</a>
+        연동 완료 (미추홀구, 시군구코드 28177). 표시가 안 되면 CONFIG의
+        <code>CHILDSCHOOL_API_KEY</code>가 유효한지 확인하세요.
+      </div>
+    </aside>
+
+    <div class="map-col">
+      <div id="map"></div>
+      <div class="status-bar" id="statusBar">지도를 준비하고 있습니다…</div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   1. 설정
+============================================================= */
+const NEIS_ATPT_CODE = "E10";           // 인천광역시교육청
+const GU_KEYWORD = "미추홀구";           // 학교 주소에 "미추홀구"가 포함된 학교만 사용
+
+// ------------------------------------------------------------
+// 유치원알리미 Open API 설정
+// 발급: https://e-childschoolinfo.moe.go.kr/openApi/login.do
+// ------------------------------------------------------------
+const CHILDSCHOOL_API_KEY = "f220902ef5c54014acc5b646b9951a8b";
+const INCHEON_SIDO_CODE = "28";
+// 미추홀구 시군구 코드만 사용
+const NAMBU_GU_CODES = [
+  { code: "28177", name: "미추홀구" },
+];
+
+const TYPE_META = {
+  "kinder-pub":  { color: getCssVar("--c-kinder-pub"),  label: "유치원(공립)" },
+  "kinder-priv": { color: getCssVar("--c-kinder-priv"), label: "유치원(사립)" },
+  "elem":        { color: getCssVar("--c-elem"),        label: "초등학교" },
+  "middle":      { color: getCssVar("--c-middle"),      label: "중학교" },
+  "high":        { color: getCssVar("--c-high"),        label: "고등학교" },
+};
+
+function getCssVar(name){
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+let map;
+let geocoder;
+let activeInfoWindow = null;
+let allSchools = [];      // {name, type, address, tel, homepage, lat, lng, marker}
+let activeFilters = new Set(Object.keys(TYPE_META));
+let searchTerm = "";
+
+/* ============================================================
+   2. 카카오맵 로드
+============================================================= */
+function loadKakaoMaps(){
+  if(KAKAO_APP_KEY === "YOUR_KAKAO_APP_KEY"){
+    document.getElementById("statusBar").textContent =
+      "⚠️ 카카오맵 JavaScript 키가 설정되지 않았습니다. index.html 상단의 KAKAO_APP_KEY 값을 교체해주세요.";
+    return;
+  }
+  const script = document.createElement("script");
+  // libraries=services : 주소→좌표 변환(Geocoder)에 필요
+  // autoload=false : 스크립트 로드 후 kakao.maps.load()로 직접 초기화 시점을 제어
+  script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_APP_KEY}&libraries=services&autoload=false`;
+  script.onload = ()=> kakao.maps.load(initMap);
+  script.onerror = ()=>{
+    document.getElementById("statusBar").textContent =
+      "⚠️ 카카오맵 스크립트 로드에 실패했습니다. JavaScript 키와 등록된 플랫폼 도메인을 확인하세요.";
+  };
+  document.head.appendChild(script);
+}
+
+function initMap(){
+  map = new kakao.maps.Map(document.getElementById("map"), {
+    center: new kakao.maps.LatLng(37.4635, 126.6503), // 미추홀구 대략 중심(관교동 인근)
+    level: 6,
+  });
+  map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
+  geocoder = new kakao.maps.services.Geocoder();
+  startDataLoad();
+}
+
+/* ============================================================
+   3. 나이스 학교기본정보 API — 초/중/고
+============================================================= */
+async function fetchNeisSchools(){
+  const url = `https://open.neis.go.kr/hub/schoolInfo?Type=json&pIndex=1&pSize=1000&ATPT_OFCDC_SC_CODE=${NEIS_ATPT_CODE}`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error("NEIS API 응답 오류: " + res.status);
+  const data = await res.json();
+  const rows = (data.schoolInfo && data.schoolInfo[1] && data.schoolInfo[1].row) || [];
+
+  return rows
+    .filter(r => r.ORG_RDNMA && r.ORG_RDNMA.includes(GU_KEYWORD))
+    .map(r => ({
+      name: r.SCHUL_NM,
+      type: schoolKindToType(r.SCHUL_KND_SC_NM),
+      found: r.FOND_SC_NM || "",
+      address: (r.ORG_RDNMA || "") + " " + (r.ORG_RDNDA || ""),
+      tel: r.ORG_TELNO || "",
+      homepage: r.HMPG_ADRES || "",
+      juOrg: r.JU_ORG_NM || "",
+    }))
+    .filter(s => s.type); // 초/중/고만 남김 (특수학교 등 제외)
+}
+
+function schoolKindToType(kind){
+  if(kind === "초등학교") return "elem";
+  if(kind === "중학교") return "middle";
+  if(kind === "고등학교") return "high";
+  return null;
+}
+
+/* ============================================================
+   4. 유치원 데이터 — 유치원알리미 Open API
+   ------------------------------------------------------------
+   유치원알리미(e-childschoolinfo.moe.go.kr)는 나이스와 별도 시스템입니다.
+   상단 CONFIG의 CHILDSCHOOL_API_KEY 값을 채우면 이 함수가 실제 데이터를
+   가져오고, 비워두면 아래 SAMPLE_KINDERGARTENS(표본)로 자동 대체됩니다.
+   위도/경도가 API 응답에 포함돼 있어 별도 지오코딩이 필요 없습니다.
+============================================================= */
+async function fetchKindergartens(){
+  if(CHILDSCHOOL_API_KEY === "YOUR_CHILDSCHOOL_API_KEY"){
+    console.warn("유치원알리미 API 키가 설정되지 않아 표본 데이터를 사용합니다.");
+    return SAMPLE_KINDERGARTENS;
+  }
+
+  const results = [];
+  for(const gu of NAMBU_GU_CODES){
+    try{
+      const url = `https://e-childschoolinfo.moe.go.kr/api/notice/basicInfo2.do?key=${CHILDSCHOOL_API_KEY}&sidoCode=${INCHEON_SIDO_CODE}&sggCode=${gu.code}&pageCnt=500`;
+      const res = await fetch(url);
+      const data = await res.json();
+
+      // ⚠️ 응답 구조가 나이스처럼 [head, row] 배열인지, 다른 형태인지
+      // 최초 1회 아래 콘솔 로그로 확인 후 필요하면 rows 추출 부분을 조정하세요.
+      console.log(`[${gu.name}] 유치원알리미 응답:`, data);
+
+      const rows =
+        (data.kinderInfo && data.kinderInfo[1] && data.kinderInfo[1].row) ||
+        (data.kinderInfo && data.kinderInfo.row) ||
+        [];
+
+      rows.forEach(r=>{
+        // sggCode로 이미 걸러지지만, 혹시 모를 오차에 대비해 주소로 한 번 더 확인합니다.
+        if(!r.addr || !r.addr.includes(GU_KEYWORD)) return;
+
+        results.push({
+          name: r.kindername,
+          type: (r.establish || "").includes("사립") ? "kinder-priv" : "kinder-pub",
+          found: r.establish || "",
+          address: r.addr || "",
+          tel: r.telno || "",
+          homepage: r.hpaddr || "",
+          // 유치원알리미는 위도/경도를 직접 제공하므로 별도 지오코딩이 필요 없습니다.
+          lat: r.lttdcdnt ? parseFloat(r.lttdcdnt) : null,
+          lng: r.lngtcdnt ? parseFloat(r.lngtcdnt) : null,
+        });
+      });
+    }catch(err){
+      console.error(`${gu.name} 유치원 데이터를 불러오지 못했습니다:`, err);
+    }
+  }
+
+  return results.length ? results : SAMPLE_KINDERGARTENS;
+}
+
+const SAMPLE_KINDERGARTENS = [
+  { name:"인천남부유치원(예시-공립)", type:"kinder-pub", address:"인천광역시 남동구 예시로 10", tel:"032-000-0000", homepage:"" },
+  { name:"구월유치원(예시-공립)",     type:"kinder-pub", address:"인천광역시 남동구 예시로 22", tel:"032-000-0001", homepage:"" },
+  { name:"모아유치원(예시-사립)",     type:"kinder-priv",address:"인천광역시 미추홀구 예시로 5", tel:"032-000-0002", homepage:"" },
+  { name:"해맑은유치원(예시-사립)",   type:"kinder-priv",address:"인천광역시 연수구 예시로 8",  tel:"032-000-0003", homepage:"" },
+];
+
+/* ============================================================
+   5. 전체 로드 & 지오코딩
+============================================================= */
+async function startDataLoad(){
+  const statusBar = document.getElementById("statusBar");
+  try{
+    statusBar.textContent = "나이스 API에서 초·중·고 정보를 불러오는 중…";
+    const [neisSchools, kinders] = await Promise.all([
+      fetchNeisSchools().catch(err=>{
+        console.error(err);
+        statusBar.textContent = "⚠️ 나이스 API 호출에 실패했습니다(CORS/네트워크). 콘솔을 확인하세요.";
+        return [];
+      }),
+      fetchKindergartens(),
+    ]);
+
+    allSchools = [...neisSchools, ...kinders].map(s => ({
+      lat: null, lng: null, marker: null,   // 기본값
+      ...s,                                  // 유치원처럼 lat/lng이 이미 있으면 이 값이 우선 적용됨
+    }));
+
+    updateHeaderStat(`총 ${allSchools.length}개 기관 · 위치 변환 중…`);
+    await geocodeAll(statusBar);
+
+    statusBar.classList.add("hidden");
+    updateHeaderStat(`총 ${allSchools.length}개 기관 표시 중`);
+    renderCounts();
+    renderList();
+  }catch(err){
+    console.error(err);
+    statusBar.textContent = "데이터를 불러오는 중 오류가 발생했습니다: " + err.message;
+  }
+}
+
+function updateHeaderStat(text){
+  document.getElementById("headerStat").innerHTML = text;
+}
+
+// 카카오 Geocoder(libraries=services)는 geocoder.addressSearch()로 호출합니다.
+// 너무 빠르게 연속 호출하면 호출한도에 걸릴 수 있어 120ms 간격 큐로 처리합니다.
+function geocodeAll(statusBar){
+  return new Promise((resolve)=>{
+    let i = 0;
+    const cache = JSON.parse(localStorage.getItem("geocodeCache") || "{}");
+
+    function next(){
+      if(i >= allSchools.length){
+        localStorage.setItem("geocodeCache", JSON.stringify(cache));
+        resolve();
+        return;
+      }
+      const school = allSchools[i];
+
+      // 유치원알리미 데이터처럼 이미 위도/경도가 있는 경우 지오코딩 생략
+      if(school.lat != null && school.lng != null){
+        placeMarker(school);
+        i++; next();
+        return;
+      }
+
+      statusBar.textContent = `위치 변환 중… (${i+1}/${allSchools.length}) ${school.name}`;
+
+      if(cache[school.address]){
+        school.lat = cache[school.address].lat;
+        school.lng = cache[school.address].lng;
+        placeMarker(school);
+        i++; next();
+        return;
+      }
+
+      geocoder.addressSearch(school.address, (result, status)=>{
+        if(status === kakao.maps.services.Status.OK && result[0]){
+          school.lat = parseFloat(result[0].y);
+          school.lng = parseFloat(result[0].x);
+          cache[school.address] = { lat: school.lat, lng: school.lng };
+          placeMarker(school);
+        }else{
+          console.warn("지오코딩 실패:", school.name, status);
+        }
+        i++;
+        setTimeout(next, 120);
+      });
+    }
+    next();
+  });
+}
+
+/* ============================================================
+   6. 마커 / 리스트 / 필터
+============================================================= */
+function makeMarkerImage(color){
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18">
+    <circle cx="9" cy="9" r="7" fill="${color}" stroke="#ffffff" stroke-width="2"/>
+  </svg>`;
+  const src = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
+  return new kakao.maps.MarkerImage(src, new kakao.maps.Size(18,18), {
+    offset: new kakao.maps.Point(9,9)
+  });
+}
+
+function placeMarker(school){
+  if(school.lat == null) return;
+  const meta = TYPE_META[school.type];
+  const marker = new kakao.maps.Marker({
+    position: new kakao.maps.LatLng(school.lat, school.lng),
+    map,
+    title: school.name,
+    image: makeMarkerImage(meta.color),
+  });
+
+  const content = `
+    <div style="font-family:inherit;min-width:200px;padding:10px 12px;">
+      <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${school.name}</div>
+      <div style="font-size:12px;color:#555;margin-bottom:2px;">${meta.label}${school.found ? " · " + school.found : ""}</div>
+      <div style="font-size:12px;color:#555;margin-bottom:2px;">${school.address}</div>
+      ${school.tel ? `<div style="font-size:12px;color:#555;">${school.tel}</div>` : ""}
+      ${school.homepage ? `<div style="font-size:12px;margin-top:4px;"><a href="${school.homepage.startsWith('http')?school.homepage:'http://'+school.homepage}" target="_blank">홈페이지</a></div>` : ""}
+    </div>`;
+
+  kakao.maps.event.addListener(marker, "click", ()=> openInfo(marker, content));
+
+  school.marker = marker;
+  school.infoContent = content;
+  applyVisibility(school);
+}
+
+function openInfo(marker, content){
+  if(!activeInfoWindow){
+    activeInfoWindow = new kakao.maps.InfoWindow({ removable: true });
+  }
+  activeInfoWindow.setContent(content);
+  activeInfoWindow.open(map, marker);
+}
+
+function applyVisibility(school){
+  if(!school.marker) return;
+  const matchesFilter = activeFilters.has(school.type);
+  const matchesSearch = !searchTerm || school.name.includes(searchTerm);
+  school.marker.setMap((matchesFilter && matchesSearch) ? map : null);
+}
+
+function renderCounts(){
+  Object.keys(TYPE_META).forEach(type=>{
+    const n = allSchools.filter(s=>s.type===type).length;
+    const el = document.getElementById("cnt-" + type);
+    if(el) el.textContent = n;
+  });
+}
+
+function renderList(){
+  const wrap = document.getElementById("listWrap");
+  wrap.innerHTML = "";
+  const visible = allSchools.filter(s =>
+    activeFilters.has(s.type) && (!searchTerm || s.name.includes(searchTerm))
+  );
+
+  if(visible.length === 0){
+    wrap.innerHTML = `<div class="legend-note">표시할 학교가 없습니다.</div>`;
+    return;
+  }
+
+  visible.forEach(school=>{
+    const meta = TYPE_META[school.type];
+    const item = document.createElement("div");
+    item.className = "list-item";
+    item.innerHTML = `
+      <span class="tag" style="background:${meta.color}">${meta.label}</span>
+      <div class="name" style="display:inline">${school.name}</div>
+      <div class="meta">${school.address}</div>
+    `;
+    item.addEventListener("click", ()=>{
+      if(school.lat == null) return;
+      map.panTo(new kakao.maps.LatLng(school.lat, school.lng));
+      map.setLevel(3);
+      if(school.marker) openInfo(school.marker, school.infoContent);
+    });
+    wrap.appendChild(item);
+  });
+}
+
+/* ============================================================
+   7. 이벤트 바인딩
+============================================================= */
+document.querySelectorAll('input[type="checkbox"][data-type]').forEach(cb=>{
+  cb.addEventListener("change", ()=>{
+    const type = cb.dataset.type;
+    if(cb.checked) activeFilters.add(type); else activeFilters.delete(type);
+    allSchools.filter(s=>s.type===type).forEach(applyVisibility);
+    renderList();
+  });
+});
+
+document.getElementById("searchInput").addEventListener("input", (e)=>{
+  searchTerm = e.target.value.trim();
+  allSchools.forEach(applyVisibility);
+  renderList();
+});
+
+loadKakaoMaps();
+</script>
+</body>
+</html>

@@ -189,7 +189,7 @@
   <header>
     <div>
       <div class="eyebrow">NAMBU DISTRICT OFFICE OF EDUCATION, INCHEON</div>
-      <h1>인천남부 에듀맵(Edu-Map)  <span style="font-weight:400;font-size:12px;color:#9fb0c9;">미추홀구 · 제물포구 · 영종구 · 옹진군</span></h1>
+      <h1>인천남부 에듀맵(Edu-Map) <span style="font-weight:400;font-size:12px;color:#9fb0c9;">미추홀구 · 제물포구 · 영종구 · 옹진군</span></h1>
     </div>
     <div class="stat" id="headerStat">데이터 불러오는 중…</div>
   </header>
@@ -245,7 +245,7 @@
 ============================================================= */
 const NEIS_ATPT_CODE = "E10";           // 인천광역시교육청
 
-// 인천남부교육지원청 관할 구역 주소 키워드
+// [확장] 인천남부교육지원청 관할 구역 주소 키워드
 // 2026.7.1. 행정구역 개편으로 중구·동구 → 제물포구·영종구가 되었지만,
 // 나이스의 주소 데이터가 아직 개편 이전(중구·동구)일 수 있어
 // 신·구 명칭을 모두 포함해 필터링합니다.
@@ -254,8 +254,9 @@ const DISTRICT_KEYWORDS = ["미추홀구", "제물포구", "영종구", "옹진�
 // 관할 밖 구·군은 먼저 배제 — "남동구"가 "동구" 검사에 걸리는 오탐 방지
 const EXCLUDE_KEYWORDS = ["남동구", "연수구", "부평구", "계양구", "서구", "검단구", "강화군"];
 
-// 주소가 관할 구역인지 정규식으로 엄격 검사:
+// [강화] 주소가 관할 구역인지 정규식으로 엄격 검사:
 // 반드시 "인천광역시(또는 인천) + 관할 구·군명" 형태여야 통과.
+// 도로명·동 이름에 우연히 같은 글자가 들어가는 오탐을 원천 차단합니다.
 const DISTRICT_REGEX = /인천(광역시)?\s*(미추홀구|제물포구|영종구|옹진군|중구|동구)/;
 function matchesDistrict(addr){
   if(!addr) return false;
@@ -264,7 +265,9 @@ function matchesDistrict(addr){
 }
 
 // ------------------------------------------------------------
-// 나이스 교육정보 개방 포털 인증키 (무료 발급: https://open.neis.go.kr)
+// [수정] 나이스 교육정보 개방 포털 인증키 (무료 발급: https://open.neis.go.kr)
+// ⚠️ 비워두면("") 샘플 수준의 일부 데이터만 반환되어 미추홀구 학교가
+//    걸리지 않을 수 있습니다. 반드시 발급받아 입력하세요.
 // ------------------------------------------------------------
 const NEIS_KEY = "2652dd1c1da445c8aef448b305a1c88c";
 
@@ -308,7 +311,7 @@ function loadKakaoMaps(){
   document.head.appendChild(script);
 }
 
-// 지도 초기 화면(첫 로드 시 중심·확대 레벨) — 검색어를 지우면 이 값으로 복귀
+// [추가] 지도 초기 화면(첫 로드 시 중심·확대 레벨) — 검색어를 지우면 이 값으로 복귀
 const INIT_CENTER = { lat: 37.4550, lng: 126.5600 }; // 미추홀~영종을 함께 조망
 const INIT_LEVEL = 9;
 
@@ -326,6 +329,7 @@ function initMap(){
    3. 나이스 학교기본정보 API — 초/중/고
 ============================================================= */
 async function fetchNeisSchools(){
+  // [수정] 인증키 파라미터 추가 — 키 없이는 일부 샘플만 반환됨
   const keyParam = NEIS_KEY ? `&KEY=${encodeURIComponent(NEIS_KEY)}` : "";
   const url = `https://open.neis.go.kr/hub/schoolInfo?Type=json&pIndex=1&pSize=1000&ATPT_OFCDC_SC_CODE=${NEIS_ATPT_CODE}${keyParam}`;
   const res = await fetch(url);
@@ -334,13 +338,13 @@ async function fetchNeisSchools(){
   const rows = (data.schoolInfo && data.schoolInfo[1] && data.schoolInfo[1].row) || [];
 
   return rows
-    // 관할 판정 이중화: 주소가 관할 구역(정규식 통과)이거나,
+    // [수정] 관할 판정 이중화: 주소가 관할 구역이거나,
     // 나이스의 관할기관명(JU_ORG_NM)이 "남부교육지원청"인 학교만
     .filter(r =>
       matchesDistrict(r.ORG_RDNMA) ||
       (r.JU_ORG_NM || "").includes("남부교육지원청")
     )
-    // 개교예정 학교 제외 (가칭/개교예정 표기 또는 설립일이 미래)
+    // [추가] 개교예정 학교 제외 (가칭/개교예정 표기 또는 설립일이 미래)
     .filter(r => !isPlannedSchool(r))
     .map(r => ({
       name: r.SCHUL_NM,
@@ -354,7 +358,7 @@ async function fetchNeisSchools(){
     .filter(s => s.type); // 초/중/고만 남김 (특수학교 등 제외)
 }
 
-// 개교예정(미개교) 학교 판별
+// [추가] 개교예정(미개교) 학교 판별
 function isPlannedSchool(r){
   const name = r.SCHUL_NM || "";
   if(name.includes("가칭") || name.includes("개교예정")) return true;
@@ -377,7 +381,7 @@ function schoolKindToType(kind){
 }
 
 /* ============================================================
-   4. 전체 로드 & 지오코딩
+   5. 전체 로드 & 지오코딩
 ============================================================= */
 async function startDataLoad(){
   const statusBar = document.getElementById("statusBar");
@@ -405,6 +409,7 @@ async function startDataLoad(){
     updateHeaderStat(`총 ${allSchools.length}개 기관 · 위치 변환 중…`);
     await geocodeAll(statusBar);
 
+    // [수정] 실패한 데이터 소스가 있으면 상태바를 숨기지 않고 경고 유지
     if(neisLoadFailed){
       statusBar.textContent = "⚠️ 나이스(초·중·고) 호출 실패 — NEIS_KEY 확인";
     }else{
@@ -437,6 +442,7 @@ function geocodeAll(statusBar){
       }
       const school = allSchools[i];
 
+      // 이미 위도/경도가 있는 경우 지오코딩 생략
       if(school.lat != null && school.lng != null){
         placeMarker(school);
         i++; next();
@@ -471,7 +477,7 @@ function geocodeAll(statusBar){
 }
 
 /* ============================================================
-   5. 마커 / 리스트 / 필터
+   6. 마커 / 리스트 / 필터
 ============================================================= */
 function makeMarkerImage(color){
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18">
@@ -493,7 +499,7 @@ function placeMarker(school){
     image: makeMarkerImage(meta.color),
   });
 
-  // 정보창 구성:
+  // [수정] 정보창 구성:
   // - 주소는 white-space:nowrap으로 줄바꿈 없이 한 줄 표시 (박스가 주소 길이만큼 늘어남)
   // - 전화번호와 홈페이지 링크를 같은 줄에 배치, 전화번호 뒤 5칸 공백 후 홈페이지
   const homeLink = school.homepage
@@ -512,7 +518,9 @@ function placeMarker(school){
 
   kakao.maps.event.addListener(marker, "click", ()=> openInfo(marker, content));
 
-  // 롤오버 정보: 마커의 "오른쪽 옆"에 표시해 학교 면적을 가리지 않음
+  // [추가] 롤오버 정보: 마커의 "오른쪽 옆"에 표시.
+  // 학교 부지는 마커를 중심으로 퍼져 있으므로, 정보창을 마커 위가 아니라
+  // 옆으로 띄우면(가로 오프셋) 학교 면적을 가리지 않습니다.
   kakao.maps.event.addListener(marker, "mouseover", ()=> showHover(school));
   kakao.maps.event.addListener(marker, "mouseout",  ()=> hideHover());
 
@@ -521,12 +529,12 @@ function placeMarker(school){
   applyVisibility(school);
 }
 
-// 롤오버 정보창 표시/숨김 (CustomOverlay 재사용)
+// [추가] 롤오버 정보창 표시/숨김 (CustomOverlay 재사용)
 function showHover(school){
   const meta = TYPE_META[school.type];
   const html = `
     <div style="
-      margin-left:16px;
+      margin-left:16px;                 /* 마커 오른쪽으로 띄우는 간격 */
       background:#ffffff;
       border:1px solid #cfd6dd;
       border-left:4px solid ${meta.color};
@@ -537,7 +545,7 @@ function showHover(school){
       font-size:12px;
       line-height:1.55;
       white-space:nowrap;
-      pointer-events:none;
+      pointer-events:none;              /* 정보창이 마우스 이벤트를 막지 않도록 */
     ">
       <div style="font-weight:700;font-size:13px;">${school.name}</div>
       <div style="color:#555;">${meta.label}${school.found ? " · " + school.found : ""}</div>
@@ -546,8 +554,8 @@ function showHover(school){
   if(!hoverOverlay){
     hoverOverlay = new kakao.maps.CustomOverlay({
       zIndex: 20,
-      xAnchor: 0,     // 정보창 왼쪽 끝을 마커 좌표에 맞춤 → 마커 오른쪽에 표시
-      yAnchor: 0.5,
+      xAnchor: 0,     // 정보창의 왼쪽 끝을 마커 좌표에 맞춤 → 마커 오른쪽에 표시
+      yAnchor: 0.5,   // 세로는 마커 높이 중앙에 정렬
       clickable: false,
     });
   }
@@ -577,7 +585,10 @@ function applyVisibility(school){
 
 function renderCounts(){
   Object.keys(TYPE_META).forEach(type=>{
-    const list = allSchools.filter(s => s.type === type);
+    // [수정] 검색어가 있으면 검색 결과 기준으로, 없으면 전체 기준으로 집계
+    const list = allSchools.filter(s =>
+      s.type === type && (!searchTerm || s.name.includes(searchTerm))
+    );
     const n = list.length;
     // 학교명에 "분교"가 포함된 학교(분교장 포함)를 분교로 집계
     const b = list.filter(s => (s.name || "").includes("분교")).length;
@@ -610,7 +621,8 @@ function renderList(){
     item.addEventListener("click", ()=>{
       if(school.lat == null) return;
       const pos = new kakao.maps.LatLng(school.lat, school.lng);
-      // 확대 후 setCenter로 학교를 화면 정중앙에 고정
+      // [수정] 확대 후 setCenter로 학교를 화면 정중앙에 고정
+      // (panTo+setLevel 순서로는 확대 기준점이 어긋나 중앙을 벗어남)
       map.setLevel(3);
       map.setCenter(pos);
       if(school.marker) openInfo(school.marker, school.infoContent);
@@ -620,7 +632,7 @@ function renderList(){
 }
 
 /* ============================================================
-   6. 이벤트 바인딩
+   7. 이벤트 바인딩
 ============================================================= */
 document.querySelectorAll('input[type="checkbox"][data-type]').forEach(cb=>{
   cb.addEventListener("change", ()=>{
@@ -634,6 +646,7 @@ document.querySelectorAll('input[type="checkbox"][data-type]').forEach(cb=>{
 document.getElementById("searchInput").addEventListener("input", (e)=>{
   searchTerm = e.target.value.trim();
   allSchools.forEach(applyVisibility);
+  renderCounts();   // [추가] 검색어에 맞춰 학교급별 개수도 함께 갱신
   renderList();
 
   // 검색란이 비면(글자를 모두 지우면) 지도를 첫 화면 상태로 복귀
@@ -642,7 +655,7 @@ document.getElementById("searchInput").addEventListener("input", (e)=>{
   }
 });
 
-// 지도를 초기 중심·확대 레벨로 되돌리고, 열려 있는 정보창을 닫음
+// [추가] 지도를 초기 중심·확대 레벨로 되돌리고, 열려 있는 정보창을 닫음
 function resetToInitialView(){
   if(!map) return;
   map.setLevel(INIT_LEVEL);

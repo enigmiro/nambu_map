@@ -242,12 +242,7 @@
       <div class="list-wrap" id="listWrap"></div>
 
       <div class="legend-note">
-        초·중·고 데이터: 나이스 교육정보 개방 포털(open.neis.go.kr) 실시간 연동
-        (인천남부교육지원청 관할 — 미추홀구·제물포구·영종구·옹진군 주소 기준 필터,
-        2026.7. 행정구역 개편 이전의 중구·동구 주소도 포함).
-        유치원 데이터: <a href="https://e-childschoolinfo.moe.go.kr/openApi/login.do" target="_blank">유치원알리미 Open API</a>
-        연동 (관할 시군구코드별 조회). 표시가 안 되면 CONFIG의
-        <code>CHILDSCHOOL_API_KEY</code>가 유효한지 확인하세요.
+        자료 출처: 나이스 교육정보 개방 포털 · 유치원알리미 (인천남부교육지원청 관할)
       </div>
     </aside>
 
@@ -270,9 +265,13 @@ const NEIS_ATPT_CODE = "E10";           // 인천광역시교육청
 // 신·구 명칭을 모두 포함해 필터링합니다.
 const DISTRICT_KEYWORDS = ["미추홀구", "제물포구", "영종구", "옹진군", "중구", "동구"];
 
-// 주소가 관할 구역에 해당하는지 검사 (신·구 명칭 모두 허용)
+// [수정] 관할 밖 구·군은 먼저 배제 — "남동구"가 "동구" 검사에 걸리는 오탐 방지
+const EXCLUDE_KEYWORDS = ["남동구", "연수구", "부평구", "계양구", "서구", "검단구", "강화군"];
+
+// 주소가 관할 구역에 해당하는지 검사 (신·구 명칭 모두 허용, 타 관할 배제 우선)
 function matchesDistrict(addr){
   if(!addr) return false;
+  if(EXCLUDE_KEYWORDS.some(k => addr.includes(k))) return false;
   return DISTRICT_KEYWORDS.some(k => addr.includes(k));
 }
 
@@ -317,7 +316,8 @@ let allSchools = [];      // {name, type, address, tel, homepage, lat, lng, mark
 let activeFilters = new Set(Object.keys(TYPE_META));
 let searchTerm = "";
 let neisLoadFailed = false;    // 나이스 호출 실패 여부
-let kinderLoadFailed = false;  // 유치원알리미 실패(표본 대체) 여부
+let kinderLoadFailed = false;  // 유치원알리미 호출 실패 여부
+let kinderFailReason = "";     // [수정] 유치원알리미 실패 사유(화면 표시용)
 
 /* ============================================================
    2. 카카오맵 로드
@@ -342,7 +342,7 @@ function loadKakaoMaps(){
 
 function initMap(){
   map = new kakao.maps.Map(document.getElementById("map"), {
-    center: new kakao.maps.LatLng(37.4550, 126.5600), // [확장] 미추홀~영종을 함께 조망
+    center: new kakao.maps.LatLng(37.4550, 126.5600), // 미추홀~영종을 함께 조망
     level: 9,
   });
   map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
@@ -362,7 +362,12 @@ async function fetchNeisSchools(){
   const rows = (data.schoolInfo && data.schoolInfo[1] && data.schoolInfo[1].row) || [];
 
   return rows
-    .filter(r => matchesDistrict(r.ORG_RDNMA))  // [확장] 관할 4개 구·군 전체
+    // [수정] 관할 판정 이중화: 주소가 관할 구역이거나,
+    // 나이스의 관할기관명(JU_ORG_NM)이 "남부교육지원청"인 학교만
+    .filter(r =>
+      matchesDistrict(r.ORG_RDNMA) ||
+      (r.JU_ORG_NM || "").includes("남부교육지원청")
+    )
     .map(r => ({
       name: r.SCHUL_NM,
       type: schoolKindToType(r.SCHUL_KND_SC_NM),
@@ -386,10 +391,10 @@ function schoolKindToType(kind){
    4. 유치원 데이터 — 유치원알리미 Open API
 ============================================================= */
 async function fetchKindergartens(){
-  if(CHILDSCHOOL_API_KEY === "YOUR_CHILDSCHOOL_API_KEY"){
-    console.warn("유치원알리미 API 키가 설정되지 않아 표본 데이터를 사용합니다.");
+  if(!CHILDSCHOOL_API_KEY){
     kinderLoadFailed = true;
-    return SAMPLE_KINDERGARTENS;
+    kinderFailReason = "인증키(CHILDSCHOOL_API_KEY)가 비어 있음";
+    return [];
   }
 
   const results = [];
@@ -401,6 +406,13 @@ async function fetchKindergartens(){
 
       // 최초 1회 아래 콘솔 로그로 실제 응답 구조를 확인하세요.
       console.log(`[${gu.name}] 유치원알리미 응답:`, data);
+
+      // [수정] API가 오류 상태를 알려주면(예: {"status":"DENIED","message":"유효하지 않은 키"})
+      // 그 사유를 저장해 화면 배너에 그대로 표시
+      if(data.status && data.status !== "SUCCESS"){
+        kinderFailReason = data.message || data.status;
+        continue;
+      }
 
       // 유치원알리미는 kinderInfo에 유치원 객체 배열이 바로 담겨 오는
       // 형태가 일반적이므로 배열이면 그대로 사용하고, 아니면 나이스식 구조를 시도
@@ -428,24 +440,19 @@ async function fetchKindergartens(){
       });
     }catch(err){
       console.error(`${gu.name} 유치원 데이터를 불러오지 못했습니다:`, err);
+      if(!kinderFailReason) kinderFailReason = "호출 차단(CORS 가능성) 또는 네트워크 오류";
     }
   }
 
-  // 실패 시 조용히 대체하지 않고 플래그를 남겨 상태바에 경고 표시
+  // [수정] 실패해도 가짜(표본) 데이터를 넣지 않음 — 유치원은 0으로 두고
+  // 실패 사유만 배너에 표시하는 편이 혼동이 없음
   if(!results.length){
-    console.warn("유치원알리미에서 실제 데이터를 받지 못해 표본(예시) 데이터를 사용합니다.");
     kinderLoadFailed = true;
-    return SAMPLE_KINDERGARTENS;
+    if(!kinderFailReason) kinderFailReason = "응답에 데이터 없음";
+    console.warn("유치원알리미 실패:", kinderFailReason);
   }
   return results;
 }
-
-const SAMPLE_KINDERGARTENS = [
-  { name:"인천남부유치원(예시-공립)", type:"kinder-pub", address:"인천광역시 남동구 예시로 10", tel:"032-000-0000", homepage:"" },
-  { name:"구월유치원(예시-공립)",     type:"kinder-pub", address:"인천광역시 남동구 예시로 22", tel:"032-000-0001", homepage:"" },
-  { name:"모아유치원(예시-사립)",     type:"kinder-priv",address:"인천광역시 미추홀구 예시로 5", tel:"032-000-0002", homepage:"" },
-  { name:"해맑은유치원(예시-사립)",   type:"kinder-priv",address:"인천광역시 연수구 예시로 8",  tel:"032-000-0003", homepage:"" },
-];
 
 /* ============================================================
    5. 전체 로드 & 지오코딩
@@ -484,7 +491,7 @@ async function startDataLoad(){
     if(neisLoadFailed || kinderLoadFailed){
       const msgs = [];
       if(neisLoadFailed)   msgs.push("나이스(초·중·고) 호출 실패 — NEIS_KEY 확인");
-      if(kinderLoadFailed) msgs.push("유치원알리미 실패 — 표본 데이터로 대체됨(콘솔 확인)");
+      if(kinderLoadFailed) msgs.push("유치원알리미 실패: " + kinderFailReason);
       statusBar.textContent = "⚠️ " + msgs.join(" / ");
     }else{
       statusBar.classList.add("hidden");
@@ -615,21 +622,11 @@ function renderCounts(){
 function renderList(){
   const wrap = document.getElementById("listWrap");
   wrap.innerHTML = "";
-  let visible = allSchools.filter(s =>
+  // allSchools가 이미 [학교급 → 가나다] 순으로 정렬되어 있으므로
+  // 검색 시에도 그 순서 그대로 표시됩니다.
+  const visible = allSchools.filter(s =>
     activeFilters.has(s.type) && (!searchTerm || s.name.includes(searchTerm))
   );
-
-  // [검색 정렬] 검색어가 있으면 "가장 가까운" 학교부터:
-  // ① 검색어가 이름 앞쪽에서 일치할수록 우선(맨 앞 일치 최우선)
-  // ② 일치 위치가 같으면 가나다순
-  if(searchTerm){
-    visible = visible.slice().sort((a, b) => {
-      const ia = a.name.indexOf(searchTerm);
-      const ib = b.name.indexOf(searchTerm);
-      if(ia !== ib) return ia - ib;
-      return a.name.localeCompare(b.name, "ko");
-    });
-  }
 
   if(visible.length === 0){
     wrap.innerHTML = `<div class="legend-note">표시할 학교가 없습니다.</div>`;

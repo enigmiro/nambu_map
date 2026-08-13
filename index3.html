@@ -141,9 +141,15 @@
   .office-breakdown{
     display:flex;
     flex-wrap:wrap;
+    align-content:flex-start;
     gap:5px;
-    padding:0 0 8px 29px;
+    padding:0 6px 8px 29px;
+    max-height:92px;
+    overflow-y:auto;
+    scrollbar-width:thin;
   }
+  .office-breakdown::-webkit-scrollbar{width:6px;}
+  .office-breakdown::-webkit-scrollbar-thumb{background:#d8d4c8;border-radius:8px;}
   .office-chip{
     font-size:10.5px;
     color:var(--muted);

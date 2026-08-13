@@ -158,7 +158,16 @@
     border-radius:20px;
     padding:2px 8px;
     white-space:nowrap;
+    cursor:pointer;
+    transition:background .12s, border-color .12s;
   }
+  .office-chip:hover{border-color:var(--navy-2);}
+  .office-chip.active{
+    background:var(--navy);
+    border-color:var(--navy);
+    color:#fff;
+  }
+  .office-chip.active b{color:#fff;}
   .office-chip b{color:var(--ink);font-weight:700;}
 
   .list-wrap{
@@ -366,6 +375,7 @@ let activeFilters = new Set(Object.keys(TYPE_META));
 let searchTerm = "";
 let currentSido = null;
 let currentLoadId = 0;
+let selectedOffice = null;
 let neisLoadFailed = false;
 let hoverOverlay = null;
 let geoCache = {};
@@ -399,7 +409,24 @@ function initMap(){
   geocoder = new kakao.maps.services.Geocoder();
   loadGeoCache();
   populateSidoSelect();
+  setupOfficeChipClicks();
   loadSido(DEFAULT_SIDO_CODE);
+}
+
+function setupOfficeChipClicks(){
+  ["elem", "middle", "high"].forEach(type=>{
+    const el = document.getElementById("brk-" + type);
+    if(!el) return;
+    el.addEventListener("click", (e)=>{
+      const chip = e.target.closest(".office-chip");
+      if(!chip || !chip.dataset.label) return;
+      const label = chip.dataset.label;
+      selectedOffice = (selectedOffice === label) ? null : label;
+      renderCounts();
+      renderList();
+      updateMapMarkers();
+    });
+  });
 }
 
 function populateSidoSelect(){
@@ -448,6 +475,7 @@ async function loadSido(code){
   allSchools.forEach(s=>{ if(s.marker) s.marker.setMap(null); });
   allSchools = [];
   searchTerm = "";
+  selectedOffice = null;
   const searchInput = document.getElementById("searchInput");
   if(searchInput) searchInput.value = "";
   hideHover();
@@ -703,7 +731,9 @@ function openInfo(marker, content){
 }
 
 function matchesCurrentFilters(s){
-  return activeFilters.has(s.type) && (!searchTerm || s.name.includes(searchTerm));
+  return activeFilters.has(s.type)
+    && (!searchTerm || s.name.includes(searchTerm))
+    && (!selectedOffice || officeLabelFor(s.juOrg) === selectedOffice);
 }
 
 function updateMapMarkers(){
@@ -752,6 +782,7 @@ function updateStatus(capped, totalMatching, remaining){
   if(neisLoadFailed) msgs.push("⚠ 데이터 호출 실패");
   if(remaining > 0) msgs.push(`위치 변환 중… (${remaining}건 남음)`);
   if(capped) msgs.push(`검색 결과 ${totalMatching.toLocaleString()}건 중 상위 ${MAX_MARKERS}건만 지도에 표시 — 목록에서 선택 시 개별 확인 가능`);
+  if(selectedOffice) msgs.push(`"${selectedOffice}" 관할 학교만 표시 중 — 배지를 다시 클릭하면 해제`);
   if(msgs.length){
     statusBar.textContent = msgs.join(" · ");
     statusBar.classList.remove("hidden");
@@ -785,7 +816,8 @@ function renderCounts(){
       const labels = Object.keys(groups).sort((a, b) => a.localeCompare(b, "ko"));
       brkEl.innerHTML = labels.map(label => {
         const g = groups[label];
-        return `<span class="office-chip">${label} <b>${g.cnt}</b>(${g.branch})</span>`;
+        const activeClass = (selectedOffice === label) ? " active" : "";
+        return `<span class="office-chip${activeClass}" data-label="${label}">${label} <b>${g.cnt}</b>(${g.branch})</span>`;
       }).join("") || `<span class="office-chip">데이터 없음</span>`;
     }
   });
